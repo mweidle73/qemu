@@ -1,0 +1,47 @@
+FROM debian:trixie AS python2-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG PYTHON_VERSION=2.7.18
+ARG PYTHON_SHA256=b62c0e7937551d0cc02b8fd5cb0f544f9405bafc9a54d3808ed4594812edef43
+
+RUN curl --fail --location --silent --show-error \
+        "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz" \
+        --output /tmp/python.tar.xz \
+    && echo "${PYTHON_SHA256}  /tmp/python.tar.xz" | sha256sum --check \
+    && tar -C /tmp -xf /tmp/python.tar.xz \
+    && cd "/tmp/Python-${PYTHON_VERSION}" \
+    && ./configure --prefix=/opt/python2 --disable-shared \
+    && make -j8 \
+    && make install
+
+FROM debian:trixie
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    libaio-dev \
+    libcap-ng-dev \
+    libglib2.0-dev \
+    libpixman-1-dev \
+    patch \
+    pkg-config \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=python2-builder /opt/python2 /opt/python2
+
+ENV PATH=/opt/python2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WORKDIR /source
+
+CMD ["/bin/sh"]

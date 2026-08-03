@@ -1,0 +1,57 @@
+#!/bin/sh
+
+set -eu
+
+WORK_DIR=$(mktemp -d)
+SOURCE_DIR="$WORK_DIR/source"
+BUILD_DIR="$WORK_DIR/build"
+STAGE_DIR="$WORK_DIR/stage"
+
+cleanup()
+{
+    rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT HUP INT TERM
+
+echo "ci: preparing a private writable source tree"
+cp -a /source "$SOURCE_DIR"
+mkdir "$BUILD_DIR" "$STAGE_DIR"
+
+echo "ci: applying the upstream GLib test-path compatibility fix"
+patch -d "$SOURCE_DIR" -p1 \
+    < "$SOURCE_DIR/.github/ci/patches/0001-unique-glib-test-paths.patch"
+
+echo "ci: configuring the historical Abuild QEMU targets"
+cd "$BUILD_DIR"
+"$SOURCE_DIR/configure" \
+    --python=/opt/python2/bin/python2.7 \
+    --prefix=/usr \
+    --target-list=i386-softmmu,x86_64-softmmu \
+    --disable-werror \
+    --disable-bluez \
+    --disable-bsd-user \
+    --disable-curl \
+    --disable-curses \
+    --disable-docs \
+    --disable-guest-agent \
+    --disable-kvm \
+    --disable-linux-user \
+    --disable-sdl \
+    --disable-slirp \
+    --disable-spice \
+    --disable-xen
+
+echo "ci: building the i386 and x86_64 system emulators"
+make -j8
+
+echo "ci: running the historical upstream test suite"
+timeout 900 make check
+
+echo "ci: staging and checking the interfaces used by Abuild"
+make DESTDIR="$STAGE_DIR" install
+test -x "$STAGE_DIR/usr/bin/qemu-system-i386"
+test -x "$STAGE_DIR/usr/bin/qemu-system-x86_64"
+"$STAGE_DIR/usr/bin/qemu-system-i386" --version | grep -F 'version 2.4.1'
+"$STAGE_DIR/usr/bin/qemu-system-x86_64" --version | grep -F 'version 2.4.1'
+
+echo "ci: all historical Abuild QEMU checks passed"
